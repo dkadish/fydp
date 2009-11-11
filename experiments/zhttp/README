@@ -1,0 +1,2 @@
+A small library encapsulating common HTTP methods: request parsing, response
+construction, header mangling, etc..
