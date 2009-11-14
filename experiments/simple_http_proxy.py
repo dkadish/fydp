@@ -4,8 +4,8 @@ import logging
 import socket
 import urlparse
 import zhttp.message
+from zhttp.client import SimpleHttpClient
 
-DEFAULT_PORT = 80
 HTTP_NEWLINE = "\r\n"
 
 class SimpleHttpProxy(asyncore.dispatcher):
@@ -159,15 +159,9 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         # Let's step around this unfortunate state of affairs by killing the
         # connection if we can.
         if not request.command == 'GET':
-            self.logger.warn("Received a HTTP '%s' command" % request.command)
-            self.discard_buffers()
-            self.logger.warn("Attempting to close channel...")
-            self.close()
-            # Is there any way in which we can check/confirm that the connection has
-            # actually been closed?
-            return
-
-        self.logger.info("\n" + str(request))
+            self.logger.warn("Received an unsupported HTTP command: '%s'; attempting to close channel" % request.command)
+        else:
+            self.logger.info("\n" + str(request))
 
         # For the time being, let's barf a 500 and hang up.
         self.push("HTTP/1.1 500 Internal Server Error")
@@ -195,58 +189,6 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         # If the connection has already been closed (in order for this event to fire),
         # is there any sense in calling close() again? Will it be twice as closed?
         self.close()
-
-class SimpleHttpClient(asynchat.async_chat):
-    """
-    A _very_ rudimentary HTTP client that is somewhat HTTP/1.1 compliant;
-    support for some of the more essoteric portions of the HTTP/1.1 spec will be
-    added on an 'as-needed' basis.  Will we need separate logic and/or code for
-    providing HTTP/{0.9,1.0} clients. Do we need to worry about legacy clients?
-    """
-
-    def __init__(self, uri, proxy_server = None):
-        asynchat.async_chat.__init__(self)
-
-        self.logger = logging.getLogger('SimpleHttpClient')
-        self.set_terminator(None)
-        self.data = []
-
-        u = urlparse.urlparse(uri)
-        host = u.hostname
-        self.host = host
-        if (u.port):
-            port = u.port
-        else:
-            port = DEFAULT_PORT
-
-        self.found_terminator = self.__handle_headers
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connect((host, port))
-        self.logger.info("Connected to %s:%d" % (host, port))
-        self.proxy_server = proxy_server
-
-    def found_terminator(self):
-        pass
-
-    # No support for chunked data yet... :(
-    def __handle_headers(self):
-        self.data = []
-
-    def handle_connect(self):
-        pass
-
-    def handle_expt(self):
-        self.close()
-
-    def handle_close(self):
-        self.logger.info("Server '%s' closed connection" % self.host)
-        self.proxy_server.close()
-        self.close()
-
-    def collect_incoming_data(self, data):
-        if self.proxy_server:
-            self.proxy_server.push(data)
-        self.data.append(data)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format='%(name)s: %(message)s',)
