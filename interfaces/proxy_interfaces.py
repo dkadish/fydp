@@ -1,3 +1,7 @@
+"""
+High level proxy interfaces.
+"""
+
 class ProxyFrontend(object):
     def GET(self):
         """

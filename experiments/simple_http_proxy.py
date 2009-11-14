@@ -47,6 +47,9 @@ class SimpleHttpProxy(asyncore.dispatcher):
 
 class SimpleHttpProxyRequestHandler(asynchat.async_chat):
     """From the BaseHTTPServer docs:
+
+    ---
+
     HTTP (HyperText Transfer Protocol) is an extensible protocol on
     top of a reliable stream transport (e.g. TCP/IP).  The protocol
     recognizes three parts to a request:
@@ -92,6 +95,8 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
 
     Again, the headers and data are separated by a blank line.
 
+    ---
+
     The response code line has the form
 
     <version> <responsecode> <responsestring>
@@ -100,8 +105,6 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
     <responsecode> is a 3-digit response code indicating success or
     failure of the request, and <responsestring> is an optional
     human-readable string explaining what the response code means.
-
-    ****************************************
 
     The following request details are parsed and stored in a HttpRequest object:
 
