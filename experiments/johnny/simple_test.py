@@ -2,7 +2,7 @@ import urllib2
 import simple_cache
 
 class SimpleTest(object):
-    
+
     def getUrl(self, url):
         """
         Attempt to get a response from url argument. Returns response.
@@ -13,7 +13,7 @@ class SimpleTest(object):
 
         return response
 
-url ='http://www.google.com' 
+url ='http://www.neckbeard.ca/'
 test = SimpleTest()
 response = test.getUrl(url)
 
@@ -23,9 +23,10 @@ johnny = simple_cache.SimpleCache()
 johnny.updateResource(url,response)
 resource = johnny.getResource(url)
 
-print "All finished"
 
 for row in resource:
-    print row
+    print "Id: %s, Headers: %s, Content: %s" % (row[0], repr(str(row[1])), repr(str(row[2])))
+
+print "All finished"
 
 # TODO Put in asserts on row.info() and row.read()

@@ -1,10 +1,11 @@
 import cPickle
+import os.path
 import sqlite3
 
 class SimpleCache(object):
-    
+
     def __init__(self):
-        self.DB_PATH = '/home/ryan/courses/fydp/git/experiments/johnny/simple_cache.db'
+        self.DB_PATH = os.path.abspath('simple_cache.db')
         self.TABLE_NAME = 'resource'
 
     def getResource(self, resourceId):
@@ -21,10 +22,10 @@ class SimpleCache(object):
         # What exactly is being copied here?
         query_result = c.execute('select * from %s where resourceId=?' %
                 self.TABLE_NAME, query_arguments)
-        
-        for row in c:
-            print "Result of the query"
-            print row
+
+        #for row in c:
+        #    print "Result of the query"
+        #    print row
 
         c.close()
 
@@ -44,21 +45,14 @@ class SimpleCache(object):
         query_arguments = (resourceId,)
         c.execute('DELETE FROM %s WHERE resourceId=?' % self.TABLE_NAME, query_arguments)
         conn.commit()
-        
+
         #print resource.info()
         #print resource.read()
-
-        pickle_test = open("pickle_test.dat", "w")
-        cPickle.dump(resource, pickled_header)
-        
         # binary = sqlite3.Binary(pickled_header)
 
-        query_arguments = (resourceId, resource.info(), resource.read())
+        query_arguments = (resourceId, buffer(str(resource.info())), buffer(resource.read()))
         c.execute('''INSERT INTO %s VALUES (?,?,?)''' % self.TABLE_NAME,
                 query_arguments)
-        
-        pickle_test.close()
-
         conn.commit()
 
         c.close()
