@@ -50,7 +50,8 @@ class SimpleCache(object):
         #print resource.read()
         # binary = sqlite3.Binary(pickled_header)
 
-        query_arguments = (resourceId, buffer(str(resource.info())), buffer(resource.read()))
+
+        query_arguments = (resourceId, sqlite3.Binary(str(resource.info())), sqlite3.Binary(resource.read()))
         c.execute('''INSERT INTO %s VALUES (?,?,?)''' % self.TABLE_NAME,
                 query_arguments)
         conn.commit()
