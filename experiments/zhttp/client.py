@@ -18,8 +18,6 @@ class SimpleHttpClient(asynchat.async_chat):
         asynchat.async_chat.__init__(self)
         self.logger = logging.getLogger('SimpleHttpClient')
 
-        # We're going to mangle these headers to remove the proxy-specific
-        # fields from them.
         self.set_terminator(HTTP_NEWLINE * 2)
         self.data = []
         self.receiver = receiver
@@ -43,7 +41,6 @@ class SimpleHttpClient(asynchat.async_chat):
         http_request = HTTP_NEWLINE.join(req)
         self.state = 'headers'
 
-        print repr(http_request)
         self.push(http_request + HTTP_NEWLINE)
 
     def found_terminator(self):
@@ -51,16 +48,39 @@ class SimpleHttpClient(asynchat.async_chat):
         data = self.data[:]
         self.data = []
 
-        if self.receiver:
-            self.receiver.push(data)
-
         if self.state == 'headers':
             resp = message.HttpResponse.from_string(''.join(data))
-            print resp
             self.state = 'content'
+            self.set_terminator(int(resp.msg['content-length']))
+            self.receiver.push(HTTP_NEWLINE * 2)
+        #FIXME: This breaks HTTP/1.1 compatibility; we should only close the
+        # connection when explicitly instructed to do so.
         elif self.state == 'content':
-            self.logger.warn("Closing connection")
+            self.state = 'headers'
+            self.set_terminator(HTTP_NEWLINE * 2)
+            self.should_close = True
+
+        # GAAAAAAAAH collect_incoming_data() eats our terminator; what the
+        # christ, asynchat?
+        if self.should_close:
             self.close()
+
+    def handle_connect(self):
+        pass
+
+    def handle_expt(self):
+        self.close()
+
+    def handle_close(self):
+        self.logger.info("Server '%s' closed connection" % self.host)
+        self.receiver.close()
+        self.close()
+
+    def collect_incoming_data(self, data):
+        self.data.append(data)
+        if self.receiver:
+            self.logger.debug("Pushing content to receiver")
+            self.receiver.push(data)
 
 #    def read(self, amt=None):
 #        if self.fp is None:
@@ -184,18 +204,4 @@ class SimpleHttpClient(asynchat.async_chat):
 #        if self.msg is None:
 #            raise ResponseNotReady()
 #        return self.msg.items()
-
-    def handle_connect(self):
-        pass
-
-    def handle_expt(self):
-        self.close()
-
-    def handle_close(self):
-        self.logger.info("Server '%s' closed connection" % self.host)
-        self.receiver.close()
-        self.close()
-
-    def collect_incoming_data(self, data):
-        self.data.append(data)
 

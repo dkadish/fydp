@@ -21,7 +21,7 @@ class HttpHeaders(object):
         self.status = ''
 
     @classmethod
-    def parse_string(klass, header_str):
+    def from_string(klass, header_str):
         k = klass()
         k.readheaders(header_str)
         return k
@@ -195,7 +195,7 @@ class HttpRequest(object):
         self.headers = headers
 
     @classmethod
-    def parse(klass, request_str):
+    def from_string(klass, raw_request):
         """
         Parse a HTTP request to extract the command (i.e. verb), URI, HTTP version
         and any headers included in the request.
@@ -257,7 +257,7 @@ class HttpRequest(object):
         else:
             return False
 
-        headers = __parse_headers(hdrs)
+        headers = HttpHeaders.from_string(hdrs)
         uri = urlparse.urlsplit(path)
 
         return klass(raw_request, command, uri, version[0], version[1], headers)
@@ -297,7 +297,7 @@ class HttpResponse(object):
     def parse(self, head_str):
         self.raw_response = head_str
         header_offset = self.__parse_status()
-        self.msg = HttpHeaders.parse_string(head_str)
+        self.msg = HttpHeaders.from_string(head_str)
         self.__check_chunked()
         self.__check_content_length()
         self.will_close = self.__should_close_connection()
@@ -326,7 +326,7 @@ class HttpResponse(object):
         raw_response_idx += len(line_separator)
 
         response_line = self.raw_response[:raw_response_idx].strip()
-        self.version, self.status, self.reason = response_line.split()
+        self.version, self.status, self.reason = response_line.split(None, 2)
         return raw_response_idx
 
     def __check_chunked(self):
