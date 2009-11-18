@@ -187,12 +187,21 @@ class HttpHeaders(object):
         return repr(self.items())
 
 class HttpRequest(object):
-    def __init__(self, raw_request, command, uri, version_major, version_minor, headers):
+    def __init__(self, command, uri, version_major, version_minor, headers,
+                 raw_request = None):
         self.command = command
         self.raw_request = raw_request
         self.uri = uri
         self.version = (version_major, version_minor)
         self.headers = headers
+
+    def __str__(self):
+        req = []
+        req.append("%s %s HTTP/%d.%d" %
+                   (self.command, self.uri, self.version_major, self.version_minor))
+        for k, v in self.headers.items():
+            req.append("%s: %s" % (k.lower(), v))
+        return "\r\n".join(req)
 
     @classmethod
     def from_string(klass, raw_request):

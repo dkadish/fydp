@@ -3,8 +3,12 @@ import copy
 import logging
 import socket
 import message
+import collections
 
 HTTP_NEWLINE = "\r\n"
+_HEADERS = 'headers'
+_CONTENT = 'content'
+_CHUNKED = 'chunked-content'
 
 class SimpleHttpClient(asynchat.async_chat):
     """
@@ -12,6 +16,9 @@ class SimpleHttpClient(asynchat.async_chat):
     support for some of the more esoteric portions of the HTTP/1.1 spec will be
     added on an 'as-needed' basis.  Will we need separate logic and/or code for
     providing HTTP/{0.9,1.0} clients. Do we need to worry about legacy clients?
+
+    NB: Right now, this doesn't support connection pipelining. We NEED to
+    support this.
     """
 
     def __init__(self, receiver = None):
@@ -22,6 +29,7 @@ class SimpleHttpClient(asynchat.async_chat):
         self.data = []
         self.receiver = receiver
         self.should_close = False
+        self.active_requests = collections.deque()
 
     def conn(self, host, port = 80):
         self.host = host
@@ -32,37 +40,102 @@ class SimpleHttpClient(asynchat.async_chat):
         self.logger.info("Connected to %s:%d" % (host, port))
 
     def make_request(self, command, resource, headers):
-        req = []
-        self.headers = copy.deepcopy(headers)
-        req.append("%s %s HTTP/1.1" % (command, resource))
-        for k, v in self.headers.items():
-            req.append("%s: %s" % (k, v))
-        req.append('')
-        http_request = HTTP_NEWLINE.join(req)
+        #TODO: We can mangle the headers here if need be...
+        req = message.HttpRequest(command, resource, 1, 1, headers)
+        active_requests.append(req)
+        self.push(str(req) + HTTP_NEWLINE * 2)
         self.state = 'headers'
 
-        self.push(http_request + HTTP_NEWLINE)
+    def handle_response(self):
+        self.state = 'headers'
+        self.set_terminator(HTTP_NEWLINE * 2)
+        # Insofar as the web server is HTTP/1.1 compliant, we are guaranteed
+        # that responses come back in the same order as the requests were
+        # made
+        self.active_requests.pop()
+        self.should_close = True
+
+    def handle_chunked_response(self):
+#        assert self.chunked != _UNKNOWN
+#        chunk_left = self.chunk_left
+#        value = ''
+#
+#        # XXX This accumulates chunks by repeated string concatenation,
+#        # which is not efficient as the number or size of chunks gets big.
+#        while True:
+#            if chunk_left is None:
+#                line = self.fp.readline()
+#                i = line.find(';')
+#                if i >= 0:
+#                    line = line[:i] # strip chunk-extensions
+#                try:
+#                    chunk_left = int(line, 16)
+#                except ValueError:
+#                    # close the connection as protocol synchronisation is
+#                    # probably lost
+#                    self.close()
+#                    raise IncompleteRead(value)
+#                if chunk_left == 0:
+#                    break
+#            if amt is None:
+#                value += self._safe_read(chunk_left)
+#            elif amt < chunk_left:
+#                value += self._safe_read(amt)
+#                self.chunk_left = chunk_left - amt
+#                return value
+#            elif amt == chunk_left:
+#                value += self._safe_read(amt)
+#                self._safe_read(2)  # toss the CRLF at the end of the chunk
+#                self.chunk_left = None
+#                return value
+#            else:
+#                value += self._safe_read(chunk_left)
+#                amt -= chunk_left
+#
+#            # we read the whole chunk, get another
+#            self._safe_read(2)      # toss the CRLF at the end of the chunk
+#            chunk_left = None
+#
+#        # read and discard trailer up to the CRLF terminator
+#        ### note: we shouldn't have any trailers!
+#        while True:
+#            line = self.fp.readline()
+#            if not line:
+#                # a vanishingly small number of sites EOF without
+#                # sending the trailer
+#                break
+#            if line == '\r\n':
+#                break
+#
+#        # we read everything; close the "file"
+#        self.close()
+#
+#        return value
 
     def found_terminator(self):
-        self.logger.warn("Found terminator")
+        self.logger.debug("Found terminator")
         data = self.data[:]
         self.data = []
 
         if self.state == 'headers':
-            resp = message.HttpResponse.from_string(''.join(data))
-            self.state = 'content'
-            self.set_terminator(int(resp.msg['content-length']))
             self.receiver.push(HTTP_NEWLINE * 2)
-        #FIXME: This breaks HTTP/1.1 compatibility; we should only close the
-        # connection when explicitly instructed to do so.
-        elif self.state == 'content':
-            self.state = 'headers'
-            self.set_terminator(HTTP_NEWLINE * 2)
-            self.should_close = True
+            resp = message.HttpResponse.from_string(''.join(data))
 
-        # GAAAAAAAAH collect_incoming_data() eats our terminator; what the
-        # christ, asynchat?
-        if self.should_close:
+            if 'content-length' in resp.msg:
+                self.set_terminator(int(resp.msg['content-length']))
+                self.state = 'content'
+            elif 'transfer-encoding' in resp.msg && resp.msg['transfer-encoding'] == 'chunked':
+                self.set_terminator(HTTP_NEWLINE * 2)
+                self.state = 'content-chunked'
+
+        elif self.state == 'content':
+            self.handle_response()
+
+        elif self.state == 'content-chunked':
+            self.handle_chunked_response()
+
+        # Close once we've finished handling all active requests
+        if self.should_close && len(self.active_requests) == 0:
             self.close()
 
     def handle_connect(self):
@@ -78,7 +151,7 @@ class SimpleHttpClient(asynchat.async_chat):
 
     def collect_incoming_data(self, data):
         self.data.append(data)
-        if self.receiver:
+        if self.state == 'content' and self.receiver:
             self.logger.debug("Pushing content to receiver")
             self.receiver.push(data)
 
