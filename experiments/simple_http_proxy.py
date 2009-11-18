@@ -2,16 +2,24 @@ import asynchat
 import asyncore
 import logging
 import socket
+import signal
+import time
 import urlparse
-import zhttp.message
+from zhttp import message
 from zhttp.client import SimpleHttpClient
 
+SHUTDOWN_PERFORMED = 0
 HTTP_NEWLINE = "\r\n"
+PROXY_PORT = 8088
+LOGGING_LEVEL = logging.DEBUG
 
 class SimpleHttpProxy(asyncore.dispatcher):
     def __init__(self, host, port):
         asyncore.dispatcher.__init__(self)
+        # Fun fact: this will allow us to pick-up a socket that is currently in
+        # TIME_WAIT (i.e. a socket that is waiting to die)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.set_reuse_addr()
         self.bind((host, port))
         self.address = self.socket.getsockname()
         self.listen(1)
@@ -129,10 +137,18 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         self.logger = logging.getLogger('LoggingHttpHandler%s' % str(sock.getsockname()))
         self.buff = []
         asynchat.async_chat.__init__(self, sock)
+
         # HTTP headers end with a blank line
         self.set_terminator(HTTP_NEWLINE * 2)
         self.http_clients = {}
         self.http_client = None
+
+        #TODO: Awful debug hackery
+        self.old_push = self.push
+        def foo(data):
+            self.logger.debug("*** %s" % repr(data))
+            self.old_push(data)
+        self.push = foo
 
     def collect_incoming_data(self, data):
         """
@@ -151,26 +167,31 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         raw_request = ''.join(self.buff)
         self.buff = []
 
-        self.logger.debug("Requested: %s..." % repr(raw_request)[:100])
-        request = zhttp.message.parse_http_request(raw_request)
+        request = message.HttpRequest.from_string(raw_request)
+        self.logger.debug("Headers: %s" % repr(request.headers))
+        self.logger.info("%s %s" % (request.command, ''.join(request.uri)))
 
         # If we receive anything other than a GET: All. Bets. Are. Off.
         #
         # Let's step around this unfortunate state of affairs by killing the
-        # connection if we can.
+        # connection if we can. [MZ]
         if not request.command == 'GET':
             self.logger.warn("Received an unsupported HTTP command: '%s'; attempting to close channel" % request.command)
-        else:
-            self.logger.info("\n" + str(request))
+            self.push("HTTP/1.1 500 Internal Server Error" + HTTP_NEWLINE *2 )
+            self.close()
+            return
 
-        # For the time being, let's barf a 500 and hang up.
-        self.push("HTTP/1.1 500 Internal Server Error")
-        self.logger.debug("Throwing a bogus 500 error and closing the connection.")
-        self.close()
+        http_client = SimpleHttpClient(self)
+        http_client.conn(request.uri.hostname)
+
+        #TODO: This is a good spot to modify any headers that will be sent to an
+        # external host. [MZ]
+        http_client.make_request(request.command, request.uri.path, request.headers)
 
     def handle_connect(self):
         """
-        Called when an honest-to-goodness exception is raised.
+        Called when an honest-to-goodness connection is made with a remote
+        endpoint.
         """
         self.logger.debug("Connection with remote endpoint opened.")
 
@@ -183,21 +204,35 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         Aside: I'm pretty puzzled by Firefox's behaviour WRT making seemingly
         persistent connections to the proxy. Who exactly is responsible for
         closing the connection between the proxy and the browser. What's the
-        exit strategy (for connections) here?
+        exit strategy (for connections) here? [MZ]
         """
         self.logger.info('Remote connection closed')
-        # If the connection has already been closed (in order for this event to fire),
-        # is there any sense in calling close() again? Will it be twice as closed?
         self.close()
 
+def handle_signal (*ignore):
+    shutdown()
+
+def shutdown():
+    global SHUTDOWN_PERFORMED
+
+    if not SHUTDOWN_PERFORMED:
+        l.warn('Passing out...')
+        l.debug("Socket map: %s" % repr(asyncore.socket_map))
+        l.info("Closing %d socket(s)" % len(asyncore.socket_map))
+        asyncore.close_all()
+        l.debug("Socket map: %s" % repr(asyncore.socket_map))
+        l.warn('Gone')
+
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG, format='%(name)s: %(message)s',)
+    signal.signal (signal.SIGTERM, handle_signal)
+    signal.signal (signal.SIGINT, handle_signal)
+    signal.signal (signal.SIGHUP, handle_signal)
+
+    logging.basicConfig(level=LOGGING_LEVEL, format='[%(levelname)s] %(asctime)s - %(name)s :: %(message)s',)
     l = logging.getLogger('main')
-    address = ('localhost', 8081)
+    address = ('localhost', PROXY_PORT)
     server = SimpleHttpProxy(address[0], address[1])
     l.info("Created HTTP proxy server on %s:%d" % server.address)
 
-    try:
-        asyncore.loop(timeout=1)
-    except KeyboardInterrupt:
-        l.warn('Caught keyboard interrupt; shutting down')
+    asyncore.loop(timeout=1)
+
