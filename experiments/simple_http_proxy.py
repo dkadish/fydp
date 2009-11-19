@@ -234,5 +234,5 @@ if __name__ == '__main__':
     server = SimpleHttpProxy(address[0], address[1])
     l.info("Created HTTP proxy server on %s:%d" % server.address)
 
-    asyncore.loop(timeout=1)
+    asyncore.loop(use_poll = True)
 
