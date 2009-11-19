@@ -1,7 +1,11 @@
+import unittest
 import urllib2
 import simple_cache
 
-class SimpleTest(object):
+class SimpleTest(unittest.TestCase):
+
+    def setUp(self):
+        pass
 
     def getUrl(self, url):
         """
@@ -13,20 +17,19 @@ class SimpleTest(object):
 
         return response
 
-url ='http://www.neckbeard.ca/'
-test = SimpleTest()
-response = test.getUrl(url)
+    def testCache(self):
+        
+        url ='http://www.neckbeard.ca/'
+        response = self.getUrl(url)
+        
+        johnny = simple_cache.SimpleCache()
+        johnny.updateResource(url,response)
+        resource = johnny.getResource(url)
+        
+        self.assertEqual(response.info(), resource.info())
+        self.assertEqual(response.read(), resource.read())
 
-# print response.info()
-
-johnny = simple_cache.SimpleCache()
-johnny.updateResource(url,response)
-resource = johnny.getResource(url)
-
-
-for row in resource:
-    print "Id: %s, Headers: %s, Content: %s" % (row[0], repr(str(row[1])), repr(str(row[2])))
-
-print "All finished"
-
-# TODO Put in asserts on row.info() and row.read()
+        #for row in resource:
+        #    print "Id: %s, Headers: %s, Content: %s" % (row[0], repr(str(row[1])), repr(str(row[2])))
+        #
+        #print "All finished"
