@@ -6,9 +6,12 @@ import message
 import collections
 
 HTTP_NEWLINE = "\r\n"
+HTTP_SEP = HTTP_NEWLINE * 2
 _HEADERS = 'headers'
 _CONTENT = 'content'
-_CHUNKED = 'chunked-content'
+_CHUNKED_SIZE = 'chunked-size'
+_CHUNKED_CONTENT = 'chunked-content'
+_CHUNKED_TRAILER = 'chunked-trailer'
 
 class SimpleHttpClient(asynchat.async_chat):
     """
@@ -25,11 +28,12 @@ class SimpleHttpClient(asynchat.async_chat):
         asynchat.async_chat.__init__(self)
         self.logger = logging.getLogger('SimpleHttpClient')
 
-        self.set_terminator(HTTP_NEWLINE * 2)
+        self.set_terminator(HTTP_SEP)
         self.data = []
+        self.chunk_buffer = None
         self.receiver = receiver
         self.should_close = False
-        self.active_requests = collections.deque()
+        self.response_queue = collections.deque()
 
     def conn(self, host, port = 80):
         self.host = host
@@ -41,102 +45,91 @@ class SimpleHttpClient(asynchat.async_chat):
 
     def make_request(self, command, resource, headers):
         #TODO: We can mangle the headers here if need be...
-        req = message.HttpRequest(command, resource, 1, 1, headers)
-        active_requests.append(req)
-        self.push(str(req) + HTTP_NEWLINE * 2)
-        self.state = 'headers'
+        h = copy.deepcopy(headers)
+        del h['accept-encoding']
+        req = message.HttpRequest(command, resource, 1, 1, h)
+        self.push(str(req) + HTTP_SEP)
+        self.state = _HEADERS
 
-    def handle_response(self):
-        self.state = 'headers'
-        self.set_terminator(HTTP_NEWLINE * 2)
-        # Insofar as the web server is HTTP/1.1 compliant, we are guaranteed
-        # that responses come back in the same order as the requests were
-        # made
-        self.active_requests.pop()
-        self.should_close = True
+    def handle_content(self, data):
+        self.set_terminator(HTTP_SEP)
+        self.state = _HEADERS
+        #self.should_close = True
 
-    def handle_chunked_response(self):
-#        assert self.chunked != _UNKNOWN
-#        chunk_left = self.chunk_left
-#        value = ''
-#
-#        # XXX This accumulates chunks by repeated string concatenation,
-#        # which is not efficient as the number or size of chunks gets big.
-#        while True:
-#            if chunk_left is None:
-#                line = self.fp.readline()
-#                i = line.find(';')
-#                if i >= 0:
-#                    line = line[:i] # strip chunk-extensions
-#                try:
-#                    chunk_left = int(line, 16)
-#                except ValueError:
-#                    # close the connection as protocol synchronisation is
-#                    # probably lost
-#                    self.close()
-#                    raise IncompleteRead(value)
-#                if chunk_left == 0:
-#                    break
-#            if amt is None:
-#                value += self._safe_read(chunk_left)
-#            elif amt < chunk_left:
-#                value += self._safe_read(amt)
-#                self.chunk_left = chunk_left - amt
-#                return value
-#            elif amt == chunk_left:
-#                value += self._safe_read(amt)
-#                self._safe_read(2)  # toss the CRLF at the end of the chunk
-#                self.chunk_left = None
-#                return value
-#            else:
-#                value += self._safe_read(chunk_left)
-#                amt -= chunk_left
-#
-#            # we read the whole chunk, get another
-#            self._safe_read(2)      # toss the CRLF at the end of the chunk
-#            chunk_left = None
-#
-#        # read and discard trailer up to the CRLF terminator
-#        ### note: we shouldn't have any trailers!
-#        while True:
-#            line = self.fp.readline()
-#            if not line:
-#                # a vanishingly small number of sites EOF without
-#                # sending the trailer
-#                break
-#            if line == '\r\n':
-#                break
-#
-#        # we read everything; close the "file"
-#        self.close()
-#
-#        return value
+    def handle_chunked_size(self, data):
+        # Figure out the chunk size (byte size of the chunk is encoded as hex
+        # for some weird reason. Thanks HTTP/1.1!)
+        #
+        # XXX We probably want to assert on this to make sure that we're
+        # receiving everything the server promised.
+        chunk_size = int(data.split(None, 1)[0], 16)
+        if chunk_size > 0:
+            self.chunk_size = chunk_size
+            self.logger.debug("Chunk size: %d" % chunk_size)
+            self.state = _CHUNKED_CONTENT
+        else:
+            self.logger.debug("End of chunked content encountered")
+            self.chunk_size = None
+            self.state = _CHUNKED_TRAILER
+            self.set_terminator(HTTP_SEP)
 
+            chunk_data = ''.join(self.chunk_buffer)
+            r = self.response_queue.popleft()
+            del r.msg['transfer-encoding']
+            r.msg['content-length'] = str(len(chunk_data))
+            self.receiver.push(str(r) + HTTP_SEP)
+            self.receiver.push(chunk_data + HTTP_SEP)
+
+    def handle_chunked_content(self, data):
+        self.chunk_buffer.append(data)
+        self.logger.debug(repr(''.join(self.chunk_buffer)))
+        self.state = _CHUNKED_SIZE
+
+    # For now, let's throw away the trailer of a chunked response
+    # Let's forward the complete, de-chunked response to the client.
+    def handle_chunked_trailer(self, data):
+        self.logger.debug(repr(''.join(chunk_buffer)))
+
+    # XXX We definitely need to refactor this; we should be reassigning
+    # found_terminator rather than resorting to if/elif hootenany.
     def found_terminator(self):
         self.logger.debug("Found terminator")
-        data = self.data[:]
+        data = ''.join(self.data)
         self.data = []
 
-        if self.state == 'headers':
-            self.receiver.push(HTTP_NEWLINE * 2)
-            resp = message.HttpResponse.from_string(''.join(data))
+        if self.state == _HEADERS:
+            resp = message.HttpResponse.from_string(data)
+            self.response_queue.append(resp)
 
-            if 'content-length' in resp.msg:
+            assert not (resp.length and resp.chunked)
+
+            if resp.length:
                 self.set_terminator(int(resp.msg['content-length']))
-                self.state = 'content'
-            elif 'transfer-encoding' in resp.msg && resp.msg['transfer-encoding'] == 'chunked':
-                self.set_terminator(HTTP_NEWLINE * 2)
-                self.state = 'content-chunked'
+                self.state = _CONTENT
+                self.receiver.push(str(resp) + HTTP_SEP)
+            elif resp.chunked:
+                self.chunk_buffer = []
+                self.set_terminator(HTTP_NEWLINE)
+                self.state = _CHUNKED_SIZE
 
-        elif self.state == 'content':
-            self.handle_response()
+        elif self.state == _CONTENT:
+            self.handle_content(data)
 
-        elif self.state == 'content-chunked':
-            self.handle_chunked_response()
+        elif self.state == _CHUNKED_SIZE:
+            self.handle_chunked_size(data)
 
-        # Close once we've finished handling all active requests
-        if self.should_close && len(self.active_requests) == 0:
-            self.close()
+        elif self.state == _CHUNKED_CONTENT:
+            self.handle_chunked_content(data)
+
+        elif self.state == _CHUNKED_TRAILER:
+            self.handle_chunked_trailer(data)
+
+        # Next up, figure out when to close.
+
+    def dechunk(self, response):
+        # XXX We should de-chunkify requests so that we can store them as
+        # continguous blobs in the cache
+        pass
 
     def handle_connect(self):
         pass
@@ -146,135 +139,15 @@ class SimpleHttpClient(asynchat.async_chat):
 
     def handle_close(self):
         self.logger.info("Server '%s' closed connection" % self.host)
-        self.receiver.close()
+        #self.receiver.close()
         self.close()
 
     def collect_incoming_data(self, data):
-        self.data.append(data)
-        if self.state == 'content' and self.receiver:
-            self.logger.debug("Pushing content to receiver")
-            self.receiver.push(data)
+        self.logger.debug("Data size: %d" % len(data))
+        self.logger.debug('Incoming data: """%s"""' % repr(data))
 
-#    def read(self, amt=None):
-#        if self.fp is None:
-#            return ''
-#
-#        if self.chunked:
-#            return self._read_chunked(amt)
-#
-#        if amt is None:
-#            # unbounded read
-#            if self.length is None:
-#                s = self.fp.read()
-#            else:
-#                s = self._safe_read(self.length)
-#                self.length = 0
-#            self.close()        # we read everything
-#            return s
-#
-#        if self.length is not None:
-#            if amt > self.length:
-#                # clip the read to the "end of response"
-#                amt = self.length
-#
-#        # we do not use _safe_read() here because this may be a .will_close
-#        # connection, and the user is reading more bytes than will be provided
-#        # (for example, reading in 1k chunks)
-#        s = self.fp.read(amt)
-#        if self.length is not None:
-#            self.length -= len(s)
-#            if not self.length:
-#                self.close()
-#        return s
-#
-#    def _read_chunked(self, amt):
-#        assert self.chunked != _UNKNOWN
-#        chunk_left = self.chunk_left
-#        value = ''
-#
-#        # XXX This accumulates chunks by repeated string concatenation,
-#        # which is not efficient as the number or size of chunks gets big.
-#        while True:
-#            if chunk_left is None:
-#                line = self.fp.readline()
-#                i = line.find(';')
-#                if i >= 0:
-#                    line = line[:i] # strip chunk-extensions
-#                try:
-#                    chunk_left = int(line, 16)
-#                except ValueError:
-#                    # close the connection as protocol synchronisation is
-#                    # probably lost
-#                    self.close()
-#                    raise IncompleteRead(value)
-#                if chunk_left == 0:
-#                    break
-#            if amt is None:
-#                value += self._safe_read(chunk_left)
-#            elif amt < chunk_left:
-#                value += self._safe_read(amt)
-#                self.chunk_left = chunk_left - amt
-#                return value
-#            elif amt == chunk_left:
-#                value += self._safe_read(amt)
-#                self._safe_read(2)  # toss the CRLF at the end of the chunk
-#                self.chunk_left = None
-#                return value
-#            else:
-#                value += self._safe_read(chunk_left)
-#                amt -= chunk_left
-#
-#            # we read the whole chunk, get another
-#            self._safe_read(2)      # toss the CRLF at the end of the chunk
-#            chunk_left = None
-#
-#        # read and discard trailer up to the CRLF terminator
-#        ### note: we shouldn't have any trailers!
-#        while True:
-#            line = self.fp.readline()
-#            if not line:
-#                # a vanishingly small number of sites EOF without
-#                # sending the trailer
-#                break
-#            if line == '\r\n':
-#                break
-#
-#        # we read everything; close the "file"
-#        self.close()
-#
-#        return value
-#
-#    def _safe_read(self, amt):
-#        """Read the number of bytes requested, compensating for partial reads.
-#
-#        Normally, we have a blocking socket, but a read() can be interrupted
-#        by a signal (resulting in a partial read).
-#
-#        Note that we cannot distinguish between EOF and an interrupt when zero
-#        bytes have been read. IncompleteRead() will be raised in this
-#        situation.
-#
-#        This function should be used when <amt> bytes "should" be present for
-#        reading. If the bytes are truly not available (due to EOF), then the
-#        IncompleteRead exception can be used to detect the problem.
-#        """
-#        s = []
-#        while amt > 0:
-#            chunk = self.fp.read(min(amt, MAXAMOUNT))
-#            if not chunk:
-#                raise IncompleteRead(''.join(s), amt)
-#            s.append(chunk)
-#            amt -= len(chunk)
-#        return ''.join(s)
-#
-#    def getheader(self, name, default=None):
-#        if self.msg is None:
-#            raise ResponseNotReady()
-#        return self.msg.getheader(name, default)
-#
-#    def getheaders(self):
-#        """Return list of (header, value) tuples."""
-#        if self.msg is None:
-#            raise ResponseNotReady()
-#        return self.msg.items()
+        self.data.append(data)
+
+        if self.state == _CONTENT and self.receiver:
+            self.receiver.push(data)
 

@@ -11,7 +11,7 @@ from zhttp.client import SimpleHttpClient
 SHUTDOWN_PERFORMED = 0
 HTTP_NEWLINE = "\r\n"
 PROXY_PORT = 8088
-LOGGING_LEVEL = logging.DEBUG
+LOGGING_LEVEL = logging.INFO
 
 class SimpleHttpProxy(asyncore.dispatcher):
     def __init__(self, host, port):
@@ -143,7 +143,7 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         self.http_clients = {}
         self.http_client = None
 
-        #TODO: Awful debug hackery
+        #XXX Awful debug hackery
         self.old_push = self.push
         def foo(data):
             self.logger.debug("*** %s" % repr(data))
@@ -169,7 +169,7 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
 
         request = message.HttpRequest.from_string(raw_request)
         self.logger.debug("Headers: %s" % repr(request.headers))
-        self.logger.info("%s %s" % (request.command, ''.join(request.uri)))
+        self.logger.debug("Command: %s Resource: %s" % (request.command, ''.join(request.uri)))
 
         # If we receive anything other than a GET: All. Bets. Are. Off.
         #

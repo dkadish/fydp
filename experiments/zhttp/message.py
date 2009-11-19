@@ -80,7 +80,8 @@ class HttpHeaders(object):
                 continue
             else:
                 # All bets are off, we never should have reached here; blow up.
-                print line
+                # For now, let's fail silently
+                pass
 
     def isheader(self, line):
         """
@@ -198,7 +199,7 @@ class HttpRequest(object):
     def __str__(self):
         req = []
         req.append("%s %s HTTP/%d.%d" %
-                   (self.command, self.uri, self.version_major, self.version_minor))
+                   (self.command, self.uri, self.version[0], self.version[1]))
         for k, v in self.headers.items():
             req.append("%s: %s" % (k.lower(), v))
         return "\r\n".join(req)
@@ -269,18 +270,7 @@ class HttpRequest(object):
         headers = HttpHeaders.from_string(hdrs)
         uri = urlparse.urlsplit(path)
 
-        return klass(raw_request, command, uri, version[0], version[1], headers)
-
-    def __str__(self):
-        rep = {
-            'command' : self.command,
-            #'raw_request' : self.raw_request,
-            'uri' : self.uri,
-            'version' : self.version,
-            'headers' : self.headers.items()
-        }
-        return pformat(rep)
-
+        return klass(command, uri, version[0], version[1], headers, raw_request)
 
 class HttpResponse(object):
     def __init__(self):
@@ -293,9 +283,15 @@ class HttpResponse(object):
         self.reason = _UNKNOWN  # Reason-Phrase
 
         self.chunked = _UNKNOWN         # is "chunked" being used?
-        self.chunk_left = _UNKNOWN      # bytes left to read in current chunk
         self.length = _UNKNOWN          # number of bytes left in response
         self.will_close = _UNKNOWN      # conn will close at end of response
+
+    def __str__(self):
+        req = []
+        req.append("%s %s %s" % (self.version, self.status, self.reason))
+        for k, v in self.msg.items():
+            req.append("%s: %s" % (k.lower(), v))
+        return "\r\n".join(req)
 
     @classmethod
     def from_string(klass, h_string):
@@ -306,7 +302,7 @@ class HttpResponse(object):
     def parse(self, head_str):
         self.raw_response = head_str
         header_offset = self.__parse_status()
-        self.msg = HttpHeaders.from_string(head_str)
+        self.msg = HttpHeaders.from_string(head_str[header_offset:])
         self.__check_chunked()
         self.__check_content_length()
         self.will_close = self.__should_close_connection()
@@ -342,7 +338,6 @@ class HttpResponse(object):
         tr_enc = self.msg.getheader('transfer-encoding')
         if tr_enc and tr_enc.lower() == "chunked":
             self.chunked = 1
-            self.chunk_left = None
         else:
             self.chunked = 0
 
@@ -388,7 +383,4 @@ class HttpResponse(object):
             return False
 
         return True
-
-    def __str__(self):
-        return pformat(self.__dict__)
 
