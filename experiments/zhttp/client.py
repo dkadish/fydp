@@ -48,6 +48,7 @@ class SimpleHttpClient(asynchat.async_chat):
         h = copy.deepcopy(headers)
         del h['accept-encoding']
         req = message.HttpRequest(command, resource, 1, 1, h)
+        self.logger.debug(repr(str(req) + HTTP_SEP))
         self.push(str(req) + HTTP_SEP)
         self.state = _HEADERS
 
@@ -104,7 +105,7 @@ class SimpleHttpClient(asynchat.async_chat):
             assert not (resp.length and resp.chunked)
 
             if resp.length:
-                self.set_terminator(int(resp.msg['content-length']))
+                self.set_terminator(resp.length)
                 self.state = _CONTENT
                 self.receiver.push(str(resp) + HTTP_SEP)
             elif resp.chunked:
@@ -138,7 +139,7 @@ class SimpleHttpClient(asynchat.async_chat):
         self.close()
 
     def handle_close(self):
-        self.logger.info("Server '%s' closed connection" % self.host)
+        self.logger.debug("Server '%s' closed connection" % self.host)
         #self.receiver.close()
         self.close()
 

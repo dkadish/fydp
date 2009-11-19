@@ -11,7 +11,7 @@ from zhttp.client import SimpleHttpClient
 SHUTDOWN_PERFORMED = 0
 HTTP_NEWLINE = "\r\n"
 PROXY_PORT = 8088
-LOGGING_LEVEL = logging.INFO
+LOGGING_LEVEL = logging.DEBUG
 
 class SimpleHttpProxy(asyncore.dispatcher):
     def __init__(self, host, port):
@@ -32,7 +32,7 @@ class SimpleHttpProxy(asyncore.dispatcher):
     def handle_connect(self):
         """
         Called when the active opener's socket actually makes a connection; at
-        this point, I thinkthe connection is being managed by our
+        this point, I think the connection is being managed by our
         RequestHandler.
         """
         pass
@@ -137,6 +137,7 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         self.logger = logging.getLogger('LoggingHttpHandler%s' % str(sock.getsockname()))
         self.buff = []
         asynchat.async_chat.__init__(self, sock)
+        self.logger.info("created new HTTP handler")
 
         # HTTP headers end with a blank line
         self.set_terminator(HTTP_NEWLINE * 2)
@@ -173,19 +174,20 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
             self.close()
             return
 
-        http_client = SimpleHttpClient(self)
-        http_client.conn(request.uri.hostname)
+        http_client = None
+        self.logger.info(request.uri.hostname)
+        if not request.uri.hostname in self.http_clients:
+            http_client = SimpleHttpClient(self)
+            http_client.conn(request.uri.hostname)
+            self.http_clients[request.uri.hostname] = http_client
+        else:
+            http_client = self.http_clients[request.uri.hostname]
+
+        #XXX Mother of god, we need to figure out when the connection has been closed.
 
         #TODO: This is a good spot to modify any headers that will be sent to an
         # external host. [MZ]
         http_client.make_request(request.command, request.uri.path, request.headers)
-
-    def handle_connect(self):
-        """
-        Called when an honest-to-goodness connection is made with a remote
-        endpoint.
-        """
-        self.logger.debug("Connection with remote endpoint opened.")
 
     def handle_close(self):
         """
