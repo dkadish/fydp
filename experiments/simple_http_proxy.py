@@ -141,14 +141,6 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         # HTTP headers end with a blank line
         self.set_terminator(HTTP_NEWLINE * 2)
         self.http_clients = {}
-        self.http_client = None
-
-        #XXX Awful debug hackery
-        self.old_push = self.push
-        def foo(data):
-            self.logger.debug("*** %s" % repr(data))
-            self.old_push(data)
-        self.push = foo
 
     def collect_incoming_data(self, data):
         """
@@ -206,7 +198,7 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         closing the connection between the proxy and the browser. What's the
         exit strategy (for connections) here? [MZ]
         """
-        self.logger.info('Remote connection closed')
+        self.logger.debug('Remote connection closed')
         self.close()
 
 def handle_signal (*ignore):
