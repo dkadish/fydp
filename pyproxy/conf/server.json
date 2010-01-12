@@ -1,6 +1,7 @@
 { "proxy" : 
   {
-      "debugMode" : false
+      "debugMode" : true,
+      "verbose" : true
   },
   "http" : 
   {
