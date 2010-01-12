@@ -1,10 +1,12 @@
+import asyncore
 import asynchat
 import copy
+import collections
 import logging
 import socket
-import message
-import collections
+from httpmsg import HttpRequest, HttpResponse
 
+# Constants and other useful bits of module-level data.
 CLRF = "\r\n"
 HTTP_SEP = CLRF * 2
 _HEADERS = 'headers'
@@ -13,7 +15,50 @@ _CHUNKED_SIZE = 'chunked-size'
 _CHUNKED_CONTENT = 'chunked-content'
 _CHUNKED_TRAILER = 'chunked-trailer'
 
-class SimpleHttpClient(asynchat.async_chat):
+class Server(asyncore.dispatcher):
+    def __init__(self, host, port, request_handler):
+        asyncore.dispatcher.__init__(self)
+        # Fun fact: this will allow us to pick-up a socket that is currently in
+        # TIME_WAIT (i.e. a socket that is waiting to die)
+        self.request_handler = request_handler
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.set_reuse_addr()
+        self.bind((host, port))
+        self.address = self.socket.getsockname()
+        self.listen(1)
+
+    # TODO: If something really exceptional happens, we should devise some sort
+    # of exit strategy
+    def handle_expt(self):
+        pass
+
+    def handle_connect(self):
+        """
+        Called when the active opener's socket actually makes a connection; at
+        this point, I think the connection is being managed by our
+        RequestHandler.
+        """
+        pass
+
+    def handle_accept(self):
+        """
+        Caled when when a connection can be established with a new remote
+        endpoint that has issued a connect() call for the local endpoint.
+
+        NB: If I understand this correctly, an accept is the equivalent of a
+        'pre-connect'; the remote endpoint hasn't actually connected yet.
+        """
+        # From the asyncore docs:
+        #
+        # Return value is a pair (conn, address) where conn is a new
+        # socket object usable to send and receive data on the
+        # connection, and address is the address bound to the socket
+        # on the other end of the connection.
+        sock, addr = self.accept()
+
+        self.request_handler(sock = sock)
+
+class Client(asynchat.async_chat):
     """
     A _very_ rudimentary HTTP client that is somewhat HTTP/1.1 compliant;
     support for some of the more esoteric portions of the HTTP/1.1 spec will be
@@ -26,7 +71,7 @@ class SimpleHttpClient(asynchat.async_chat):
 
     def __init__(self, receiver = None):
         asynchat.async_chat.__init__(self)
-        self.logger = logging.getLogger('SimpleHttpClient')
+        self.logger = logging.getLogger('HttpClient')
 
         self.set_terminator(HTTP_SEP)
         self.data = []
@@ -47,7 +92,7 @@ class SimpleHttpClient(asynchat.async_chat):
         #TODO: We can mangle the headers here if need be...
         h = copy.deepcopy(headers)
         del h['accept-encoding']
-        req = message.HttpRequest(command, resource, 1, 1, h)
+        req = HttpRequest(command, resource, 1, 1, h)
         self.logger.debug(repr(str(req) + HTTP_SEP))
         self.push(str(req) + HTTP_SEP)
         self.state = _HEADERS
@@ -107,7 +152,7 @@ class SimpleHttpClient(asynchat.async_chat):
             return
 
         if self.state == _HEADERS:
-            resp = message.HttpResponse.from_string(data)
+            resp = HttpResponse.from_string(data)
             self.response_queue.append(resp)
 
             assert not (resp.length and resp.chunked)
@@ -159,4 +204,3 @@ class SimpleHttpClient(asynchat.async_chat):
 
         if self.state == _CONTENT and self.receiver:
             self.receiver.push(data)
-

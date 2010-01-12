@@ -1,0 +1,13 @@
+{ "proxy" : 
+  {
+      "debugMode" : true
+  },
+  "http" : 
+  {
+      "port": 1080
+  },
+  "cache" : {
+      "cacheSize" : 1,
+      "compressCache" : true
+  }
+}

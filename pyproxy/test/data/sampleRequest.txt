@@ -1,0 +1,11 @@
+GET http://www.apple.com/ HTTP/1.1
+Host: www.apple.com
+User-Agent: Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.5; en-US; rv:1.9.1.5) Gecko/20091102 Firefox/3.5.5
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us,en;q=0.5
+Accept-Encoding: gzip,deflate
+Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+Keep-Alive: 300
+Proxy-Connection: keep-alive
+Cookie: s_vi=[CS]v1|4990934E0000545D-A2B0C060000001D[CE]; dssid2=e5650868-3ddd-4293-8fb2-05bd25d7d7cc; s_cvp35=%5B%5B%27www.google.com%27%2C%271236447221254%27%5D%2C%5B%27venturebeat.com%27%2C%271238813951999%27%5D%2C%5B%27google%3A%20organic%27%2C%271241183741545%27%5D%2C%5B%27www.stumbleupon.com%27%2C%271242710844016%27%5D%2C%5B%27daringfireball.net%27%2C%271250913906479%27%5D%2C%5B%27arstechnica.com%27%2C%271251422310710%27%5D%2C%5B%27google%3A%20organic%27%2C%271251993569213%27%5D%2C%5B%27news.ycombinator.com%27%2C%271252119307078%27%5D%2C%5B%27google%3A%20organic%27%2C%271253730376418%27%5D%2C%5B%27www.reddit.com%27%2C%271257348927145%27%5D%2C%5B%27google%3A%20organic%27%2C%271257350095528%27%5D%5D; __g_u=97180701950210_5_0.03_0_5_1251778537061; asbid=sTT9T4TTKTYTT2HAC; s_vnum_ca=ch%3Dhomepage%26vn%3D2%3Bch%3Dredirects%26vn%3D1%3B; s_vnum_us=ch%3Dpr%26vn%3D2%3Bch%3Dhomepage%26vn%3D10%3Bch%3Dgetamac%26vn%3D2%3Bch%3Dsupport%26vn%3D3%3Bch%3Ddeveloper%26vn%3D2%3Bch%3Dipodnano%26vn%3D1%3Bch%3Ditunes%26vn%3D1%3B; ac_survey=1; s_vnum_kb=ch%3Dsupport%26vn%3D1%3B; ds01=AA937EA07C718D1CDE48674416C7A435CADADCE1508D4F181029627AE36FD063; myacinfoName=A36E1063E783E8FCC81F8FC5877EFBF5A99073E0694A95112F92FC238E8837D8; s_vnum_it=ch%3Dretailstore%26vn%3D1%3B; ccl=tfrre/a4nr0GI8QRtWDzeheGU1dhbOT40j3rWe3Vut520I4lhTIzAQ==; geo=CA
+

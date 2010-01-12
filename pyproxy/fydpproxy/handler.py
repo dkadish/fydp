@@ -1,60 +1,7 @@
-import asynchat
 import asyncore
-import logging
-import copy
-import socket
-import signal
-import time
-import urlparse
-from zhttp import message
-from zhttp.client import SimpleHttpClient
+import asynchat
 
-SHUTDOWN_PERFORMED = 0
-HTTP_NEWLINE = "\r\n"
-PROXY_PORT = 8088
-LOGGING_LEVEL = logging.DEBUG
-
-class SimpleHttpProxy(asyncore.dispatcher):
-    def __init__(self, host, port):
-        asyncore.dispatcher.__init__(self)
-        # Fun fact: this will allow us to pick-up a socket that is currently in
-        # TIME_WAIT (i.e. a socket that is waiting to die)
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.set_reuse_addr()
-        self.bind((host, port))
-        self.address = self.socket.getsockname()
-        self.listen(1)
-
-    # TODO: If something really exceptional happens, we should devise some sort
-    # of exit strategy
-    def handle_expt(self):
-        pass
-
-    def handle_connect(self):
-        """
-        Called when the active opener's socket actually makes a connection; at
-        this point, I think the connection is being managed by our
-        RequestHandler.
-        """
-        pass
-
-    def handle_accept(self):
-        """
-        Caled when when a connection can be established with a new remote
-        endpoint that has issued a connect() call for the local endpoint.
-
-        NB: If I understand this correctly, an accept is the equivalent of a
-        'pre-connect'; the remote endpoint hasn't actually connected yet.
-        """
-        sock, addr = self.accept()
-        # From the asyncore docs:
-        #
-        # Return value is a pair (conn, address) where conn is a new socket object
-        # usable to send and receive data on the connection, and address is the address
-        # bound to the socket on the other end of the connection.
-        SimpleHttpProxyRequestHandler(sock = sock)
-
-class SimpleHttpProxyRequestHandler(asynchat.async_chat):
+class ProxyHttpRequestHandler(asynchat.async_chat):
     """From the BaseHTTPServer docs:
 
     ---
@@ -135,7 +82,9 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
     e.g. "text/html" or "text/plain".
     """
     def __init__(self, sock):
-        self.logger = logging.getLogger('LoggingHttpHandler%s' % str(sock.getsockname()))
+        self.logger = logging.getLogger(
+            'LoggingHttpHandler%s' % str(sock.getsockname()))
+
         self.buff = []
         asynchat.async_chat.__init__(self, sock)
         self.logger.info("created new HTTP handler")
@@ -168,7 +117,8 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
             del headers['keep-alive']
 
         self.logger.debug("Headers: %s" % repr(headers))
-        self.logger.debug("Command: %s Resource: %s" % (request.command, ''.join(request.uri)))
+        self.logger.debug("Command: %s Resource: %s"
+                          % (request.command, ''.join(request.uri)))
 
         # If we receive anything other than a GET: All. Bets. Are. Off.
         #
@@ -208,31 +158,4 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
         """
         self.logger.debug('Remote connection closed')
         self.close()
-
-def handle_signal (*ignore):
-    shutdown()
-
-def shutdown():
-    global SHUTDOWN_PERFORMED
-
-    if not SHUTDOWN_PERFORMED:
-        l.warn('Passing out...')
-        l.debug("Socket map: %s" % repr(asyncore.socket_map))
-        l.info("Closing %d socket(s)" % len(asyncore.socket_map))
-        asyncore.close_all()
-        l.debug("Socket map: %s" % repr(asyncore.socket_map))
-        l.warn('Gone')
-
-if __name__ == '__main__':
-    signal.signal (signal.SIGTERM, handle_signal)
-    signal.signal (signal.SIGINT, handle_signal)
-    signal.signal (signal.SIGHUP, handle_signal)
-
-    logging.basicConfig(level=LOGGING_LEVEL, format='[%(levelname)s] %(asctime)s - %(name)s :: %(message)s',)
-    l = logging.getLogger('main')
-    address = ('localhost', PROXY_PORT)
-    server = SimpleHttpProxy(address[0], address[1])
-    l.info("Created HTTP proxy server on %s:%d" % server.address)
-
-    asyncore.loop(use_poll = True)
 

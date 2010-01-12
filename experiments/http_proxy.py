@@ -11,10 +11,8 @@ from zhttp.client import SimpleHttpClient
 
 SHUTDOWN_PERFORMED = 0
 HTTP_NEWLINE = "\r\n"
-PROXY_PORT = 8088
-LOGGING_LEVEL = logging.DEBUG
 
-class SimpleHttpProxy(asyncore.dispatcher):
+class HttpProxy(asyncore.dispatcher):
     def __init__(self, host, port):
         asyncore.dispatcher.__init__(self)
         # Fun fact: this will allow us to pick-up a socket that is currently in
@@ -49,9 +47,10 @@ class SimpleHttpProxy(asyncore.dispatcher):
         sock, addr = self.accept()
         # From the asyncore docs:
         #
-        # Return value is a pair (conn, address) where conn is a new socket object
-        # usable to send and receive data on the connection, and address is the address
-        # bound to the socket on the other end of the connection.
+        # Return value is a pair (conn, address) where conn is a new
+        # socket object usable to send and receive data on the
+        # connection, and address is the address bound to the socket
+        # on the other end of the connection.
         SimpleHttpProxyRequestHandler(sock = sock)
 
 class SimpleHttpProxyRequestHandler(asynchat.async_chat):
@@ -135,7 +134,9 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
     e.g. "text/html" or "text/plain".
     """
     def __init__(self, sock):
-        self.logger = logging.getLogger('LoggingHttpHandler%s' % str(sock.getsockname()))
+        self.logger = logging.getLogger(
+            'LoggingHttpHandler%s' % str(sock.getsockname()))
+        
         self.buff = []
         asynchat.async_chat.__init__(self, sock)
         self.logger.info("created new HTTP handler")
@@ -168,7 +169,8 @@ class SimpleHttpProxyRequestHandler(asynchat.async_chat):
             del headers['keep-alive']
 
         self.logger.debug("Headers: %s" % repr(headers))
-        self.logger.debug("Command: %s Resource: %s" % (request.command, ''.join(request.uri)))
+        self.logger.debug("Command: %s Resource: %s"
+                          % (request.command, ''.join(request.uri)))
 
         # If we receive anything other than a GET: All. Bets. Are. Off.
         #
@@ -235,4 +237,3 @@ if __name__ == '__main__':
     l.info("Created HTTP proxy server on %s:%d" % server.address)
 
     asyncore.loop(use_poll = True)
-

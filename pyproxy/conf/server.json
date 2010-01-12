@@ -1,0 +1,16 @@
+{ "proxy" : 
+  {
+      "debugMode" : false
+  },
+  "http" : 
+  {
+      "maxConnections" : 5,
+      "sslEnabled" : false,
+      "verbose" : false,
+      "port": 8081
+  },
+  "cache" : {
+      "cacheSize" : 100,
+      "compressCache" : false
+  }
+}

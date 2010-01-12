@@ -1,7 +1,7 @@
 from pprint import pformat
 import urlparse
 import email.message
-import status
+import httpconst
 
 HTTP_PORT = 80
 HTTPS_PORT = 443
@@ -194,13 +194,13 @@ class HttpRequest(object):
         self.raw_request = raw_request
         self.uri = uri
         self.version = (version_major, version_minor)
-        self.msg = headers
+        self.headers = headers
 
     def __str__(self):
         req = []
         req.append("%s %s HTTP/%d.%d" %
                    (self.command, self.uri, self.version[0], self.version[1]))
-        for k, v in self.msg.items():
+        for k, v in self.headers.items():
             req.append("%s: %s" % (k.lower(), v))
         return "\r\n".join(req)
 
